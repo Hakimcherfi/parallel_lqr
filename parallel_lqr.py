@@ -1,4 +1,5 @@
 import numpy as np
+import pdb
 from matplotlib import pyplot as plt
 from numpy import linalg
 from scipy.linalg import null_space,orth
@@ -90,7 +91,8 @@ def subproblem(xinit,xterm,T):
     vx1 = [np.zeros((n,1))]
     Vzx = [np.zeros((n,n))]
     Hz = [-1.*np.eye((n))]
-    Vxx = [hessien(finalcost)(xterm)]
+    #Vxx = [hessien(finalcost)(xterm)]
+    Vxx = [hessien(costx)(xterm)]
     vz1 = [np.zeros((n,1))]
     Vzz = [np.zeros((n,n))]
     
@@ -109,52 +111,78 @@ def subproblem(xinit,xterm,T):
     n1 = []
     Zw = []
     Py = []
-    y = []
-    w = []
+    #y = []
+    #w = []
     Kx = []
     Kz = []
     k1 = []
     
     for t in range(T-1,-1,-1):
         # a t < T
+        print(t)
         mx1.append(Fx.T@vx1[-1]) # + qx1T
+        assert mx1[-1].shape == ((n,1))
+        
         mz1.append(vz1[-1])
-        Mzu.append(np.zeros((m,n)))
+        assert mz1[-1].shape == ((n,1))
+        
+        Mzu.append(Vzx[-1]@Fu)
+        assert Mzu[-1].shape == ((n,m))
+        
         Mxx.append(Qxx(x[:,t:t+1]) + Fx.T@Vxx[-1]@Fx)
+        assert Mxx[-1].shape == ((n,n))
+        
         Mux.append(Fu.T@Vxx[-1]@Fx) # + Quxt
+        assert Mux[-1].shape == ((m,n))
+        
         Nu.append(Hx[-1]@Fu)
+        assert Nu[-1].shape == ((n,m))
+        
         Nz.append(Hz[-1])
+        assert Nz[-1].shape == ((n,n))
+        
         mu1.append(Fu.T@vx1[-1]) #+qu1t
-        Mzx.append(Vzx[-1])
+        assert mu1[-1].shape == ((m,1))
+        
+        Mzx.append(Vzx[-1]@Fx)
+        assert Mzx[-1].shape == ((n,n))
+        
         Mzz.append(Vzz[-1])
+        assert Vzz[-1].shape == ((n,n))
+        
         Muu.append(Quu(u[:,t:t+1]) + Fu.T@Vxx[-1]@Fu)
+        assert Muu[-1].shape == ((m,m))
+        
         Nx.append(Hx[-1]@Fx)
-        n1.append(Hx[-1]@np.zeros((n,1)) + h1[-1])
-        print("t = {}".format(t))
-        print(Nu[-1])
+        assert Nx[-1].shape == ((n,n))
+        
+        n1.append(h1[-1]) #+Hx[-1]@np.zeros((n,1))
+        assert n1[-1].shape == ((n,1))
+        
         Zw.append(null_space(Nu[-1]))
         Py.append(orth(Nu[-1].T)) #regarder numpy qr...
-        if (Py[-1].size>0):
-            y.append(-linalg.pinv(Nu[-1]@Py[-1])@(Nx[-1]@x[:,t:t+1]+Nz[-1]@xterm+n1[-1]))
-        else:
-            y.append([])
-        if (Zw[-1].size>0):
-            w.append(-linalg.inv(Zw[-1].T@Muu[-1]@Zw[-1])@(Zw[-1].T)@(Mux[-1]@x[:,t:t+1]+Mzu[-1].T@xterm+mu1[-1]))
-        else:
-            w.append([])
+        #if (Py[-1].size>0):
+        #    y.append(-linalg.pinv(Nu[-1]@Py[-1])@(Nx[-1]@x[:,t:t+1]+Nz[-1]@xterm+n1[-1]))
+        #else:
+        #    y.append([])
+        #if (Zw[-1].size>0):
+        #    w.append(-linalg.inv(Zw[-1].T@Muu[-1]@Zw[-1])@(Zw[-1].T)@(Mux[-1]@x[:,t:t+1]+Mzu[-1].T@xterm+mu1[-1]))
+        #else:
+        #    w.append([])
+        
         Kx.append(-(Py[-1]@linalg.pinv(Nu[-1]@Py[-1])@Nx[-1]+Zw[-1]@linalg.inv(Zw[-1].T@Muu[-1]@Zw[-1])@(Zw[-1].T)@Mux[-1]))
-        Kz.append(-(Py[-1]@linalg.pinv(Nu[-1]@Py[-1])@Nz[-1]+Zw[-1]@linalg.inv(Zw[-1].T@Muu[-1]@Zw[-1])@(Zw[-1].T)@Mzu[-1]))
+        Kz.append(-(Py[-1]@linalg.pinv(Nu[-1]@Py[-1])@Nz[-1]+Zw[-1]@linalg.inv(Zw[-1].T@Muu[-1]@Zw[-1])@(Zw[-1].T)@Mzu[-1].T))
         k1.append(-(Py[-1]@linalg.pinv(Nu[-1]@Py[-1])@n1[-1]+Zw[-1]@linalg.inv(Zw[-1].T@Muu[-1]@Zw[-1])@(Zw[-1].T)@mu1[-1]))
         u[:,t:t+1] = Kx[-1]@x[:,t:t+1]+Kz[-1]@xterm+k1[-1]
-        print(Kx[-1])
-        print(u)
         Hx.append((np.eye(n)-Nu[-1]@Py[-1]@linalg.pinv(Nu[-1]@Py[-1]))@Nx[-1])
         Hz.append((np.eye(n)-Nu[-1]@Py[-1]@linalg.pinv(Nu[-1]@Py[-1]))@Nz[-1])
         h1.append((np.eye(n)-Nu[-1]@Py[-1]@linalg.pinv(Nu[-1]@Py[-1]))@n1[-1])
         Vxx.append(Mxx[-1]+2.*Mux[-1].T@Kx[-1]+Kx[-1].T@Muu[-1]@Kx[-1])
         Vzz.append(Mzz[-1]+2.*Mux[-1].T@Kz[-1]+Kz[-1].T@Muu[-1]@Kz[-1])
-        Vzx.append(Mzx[-1]+Mzu[-1].T@Kx[-1]+Kz[-1].T@Mux[-1] +Kz[-1].T@Muu[-1]@Kx[-1])
+        Vzx.append(Mzx[-1]+Mzu[-1]@Kx[-1]+Kz[-1].T@Mux[-1] +Kz[-1].T@Muu[-1]@Kx[-1])
         vx1.append(mx1[-1]+Kx[-1].T@mu1[-1]+(Mux[-1].T+Kx[-1].T@Muu[-1])@k1[-1])
-        vz1.append(mz1[-1]+Mzu[-1].T@k1[-1]+Kz[-1].T@mu1[-1]+Kz[-1].T@Muu[-1]@k1[-1])
+        vz1.append(mz1[-1]+Mzu[-1]@k1[-1]+Kz[-1].T@mu1[-1]+Kz[-1].T@Muu[-1]@k1[-1])
+        #pdb.set_trace()
+    print(u)
     
 subproblem(x0,xtarg,T)
