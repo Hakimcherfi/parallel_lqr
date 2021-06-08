@@ -178,7 +178,7 @@ def subproblem(xinit,xterm,T):
         Hz.append((np.eye(n)-Nu[-1]@Py[-1]@linalg.pinv(Nu[-1]@Py[-1]))@Nz[-1])
         h1.append((np.eye(n)-Nu[-1]@Py[-1]@linalg.pinv(Nu[-1]@Py[-1]))@n1[-1])
         Vxx.append(Mxx[-1]+2.*Mux[-1].T@Kx[-1]+Kx[-1].T@Muu[-1]@Kx[-1])
-        Vzz.append(Mzz[-1]+2.*Mux[-1].T@Kz[-1]+Kz[-1].T@Muu[-1]@Kz[-1])
+        Vzz.append(Mzz[-1]+2.*Mzu[-1]@Kz[-1]+Kz[-1].T@Muu[-1]@Kz[-1])
         Vzx.append(Mzx[-1]+Mzu[-1]@Kx[-1]+Kz[-1].T@Mux[-1] +Kz[-1].T@Muu[-1]@Kx[-1])
         vx1.append(mx1[-1]+Kx[-1].T@mu1[-1]+(Mux[-1].T+Kx[-1].T@Muu[-1])@k1[-1])
         vz1.append(mz1[-1]+Mzu[-1]@k1[-1]+Kz[-1].T@mu1[-1]+Kz[-1].T@Muu[-1]@k1[-1])
