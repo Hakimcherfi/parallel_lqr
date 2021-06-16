@@ -2,31 +2,49 @@ import numpy as np
 import pdb
 from matplotlib import pyplot as plt
 from numpy import linalg
-from scipy.linalg import null_space,orth
+import scipy.linalg
 %matplotlib inline
 
 T = 100 #T+1 points
 dt = 0.01
 
-x0 = np.array([[0.],[0.],[0.],[0.]]) #contrainte
-xtarg = np.array([[2.],[1.],[0.],[0.]]) #fonction cout
-xterm = np.array([[2.],[1.],[0.],[0.]]) #supposition
+x0 = np.array([[0.],[0.]]) #contrainte
+xtarg = np.array([[1.],[0.]]) #fonction cout
+xterm = np.array([[1.],[0.]]) #supposition
 
-xweight = 1.
+xweight = 0.
 uweight = 1.
 
-nq = 2
-nv = 2
+nq = 1
+nv = 1
 n = nq+nv
-m = 2
-dimspace = 2 #pour affichage
+m = 1
+dimspace = 1 #pour affichage
 
 #dynamique
 Fx = np.eye(n)
 Fx[:nv,nv:]=dt*np.eye(nv)
+Fu = np.concatenate([0.5*dt**2*np.eye(nv),dt*np.eye(nv)])
 
-#Fu = np.concatenate([0.5*dt**2*np.eye(nv),dt*np.eye(nv)]) #rend instable
-Fu = np.concatenate([np.zeros((nq,nq)),dt*np.eye(nv)])
+def null_space(A, eps=1e-15):
+    u, s, vh = scipy.linalg.svd(A)
+    m = A.shape[0]
+    n = A.shape[1]
+    if m<n:
+        s = np.concatenate([s,np.zeros((n-m,))])
+    null_mask = (s <= eps)
+    null_space = np.compress(null_mask, vh, axis=0)
+    return np.transpose(null_space)
+
+def orth(A,eps=1e-15):
+    u,s,vh = scipy.linalg.svd(A)
+    m = A.shape[0]
+    n = A.shape[1]
+    if m<n:
+        s = np.concatenate([s,np.zeros((n-m,))])
+    notnull_mask = (s>eps)
+    orth_space = np.compress(notnull_mask,vh,axis=0)
+    return np.transpose(orth_space)
 
 def costx(x):
     Cx = xweight*np.eye(n)
@@ -110,7 +128,7 @@ def subgains(xterm,T):
         Nz = Hz
         n1 = h1 #+Hx@np.zeros((n,1))
         Zw = null_space(Nu)
-        Py = orth(Nu.T) #regarder numpy qr...
+        Py = orth(Nu)
         A = Py@linalg.pinv(Nu@Py)
         B = Zw@linalg.inv(Zw.T@Muu@Zw)@(Zw.T)
         
@@ -121,8 +139,8 @@ def subgains(xterm,T):
         Kxl.append(Kx)
         Kzl.append(Kz)
         k1l.append(k1)
-        assert Py.shape!=((m,1))
-        if (True):
+        #assert Py.shape!=((m,1))
+        if (False):
             print("t={}".format(t))
             print("Nu={}".format(Nu))
             print("Py={}".format(Py))
@@ -133,7 +151,7 @@ def subgains(xterm,T):
                 print("Py==Im ? : {}".format((Py==np.eye(m)).all()))
             print("A*Nu == Im ? : {}".format((A@Nu==np.eye(m)).all()))
             print("A*Nu is close to Im ? : {}".format(np.allclose(A@Nu,np.eye(m))))
-            
+            print("Hxt+1 :{}".format(Hx))    
         #maj cout
         Vxx = Mxx+Mux.T@Kx+Kx.T@Mux+Kx.T@Muu@Kx
         Vzx = Mzx+Mzu@Kx+Kz.T@Mux+Kz.T@Muu@Kx
@@ -180,7 +198,7 @@ def scatter_x(x,cercle=False):
     if(dimspace==1):
         plt.scatter(x[0:1,:],np.zeros((1,x[0:1,:].shape[1])))
         plt.title("Trajectoire")
-    
+        
 def lines(x,u):
     t = np.linspace(0,T*dt,T+1)
     fig,(ax1,ax2,ax3)=plt.subplots(3,1,sharex=True)
