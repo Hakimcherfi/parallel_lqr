@@ -9,7 +9,7 @@ T = 100 #T+1 points
 dt = 0.01
 
 x0 = np.array([[0.],[0.]]) #contrainte
-xtarg = np.array([[1.],[0.]]) #fonction cout
+xtarg = np.array([[2.],[0.]]) #fonction cout
 xterm = np.array([[1.],[0.]]) #supposition
 
 xweight = 0.
@@ -27,24 +27,19 @@ Fx[:nv,nv:]=dt*np.eye(nv)
 Fu = np.concatenate([0.5*dt**2*np.eye(nv),dt*np.eye(nv)])
 
 def null_space(A, eps=1e-15):
-    u, s, vh = scipy.linalg.svd(A)
+    u, s, v = scipy.linalg.svd(A)
     m = A.shape[0]
     n = A.shape[1]
     if m<n:
         s = np.concatenate([s,np.zeros((n-m,))])
     null_mask = (s <= eps)
-    null_space = np.compress(null_mask, vh, axis=0)
+    null_space = np.compress(null_mask, v, axis=0)
     return np.transpose(null_space)
 
 def orth(A,eps=1e-15):
-    u,s,vh = scipy.linalg.svd(A)
-    m = A.shape[0]
-    n = A.shape[1]
-    if m<n:
-        s = np.concatenate([s,np.zeros((n-m,))])
+    u,s,v = scipy.linalg.svd(A)
     notnull_mask = (s>eps)
-    orth_space = np.compress(notnull_mask,vh,axis=0)
-    return np.transpose(orth_space)
+    return np.compress(notnull_mask,u,axis=1)
 
 def costx(x):
     Cx = xweight*np.eye(n)
@@ -128,7 +123,7 @@ def subgains(xterm,T):
         Nz = Hz
         n1 = h1 #+Hx@np.zeros((n,1))
         Zw = null_space(Nu)
-        Py = orth(Nu)
+        Py = orth(Nu.T) #regarder numpy qr...
         A = Py@linalg.pinv(Nu@Py)
         B = Zw@linalg.inv(Zw.T@Muu@Zw)@(Zw.T)
         
