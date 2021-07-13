@@ -1,23 +1,21 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from numpy import linalg
-%matplotlib inline
 
-T = 100 #T+1 points
 dt = 0.01
 
-x0 = np.array([[0.],[0.]]) #contrainte
-xtarg = np.array([[1.],[0.]]) #fonction cout
-xterm = np.array([[1.],[0.]]) #supposition
+x0 = np.array([[0.],[0.],[0.],[0.]]) #contrainte
+xtarg = np.array([[1.],[2.],[0.],[0.]]) #fonction cout
+xterm = np.array([[1.],[2.],[0.],[0.]]) #supposition
 
 xweight = 1.
 uweight = 1.
 
-nq = 1
-nv = 1
+nq = 2
+nv = 2
 n = nq+nv
-m = 1
-dimspace = 1 #pour affichage
+m = 2
+dimspace = 2 #pour affichage
 
 #dynamique
 Fx = np.eye(n)
@@ -68,15 +66,11 @@ def Quu(u=np.zeros((m,1))):
 def Qux(x=np.zeros((n,1)),u=np.zeros((m,1))):
     return np.zeros((m,n))
 
-def qx(): #faire tres attention
+def qx():
     return np.zeros((n,1))
-    #a = Qxx()@x+Qux().T@u
-    #return jacobian(costx,x).T - a
 
-def qu(): #faire tres attention
+def qu():
     return np.zeros((m,1))
-    #a = Qux()@x+Quu()@u
-    #return jacobian(costu,u).T - a
 
 def jacobian(f,x,eps=1.e-4):
     """
@@ -109,7 +103,6 @@ def hessian(f,x,eps=1.e-4):
     x = np.array([[0.],[0.]])
     myhessian = hessian(myfunction,x)
     """
-    
     dim = x.shape[0]
     hess = np.zeros((dim,dim))
     for n in range(dim): #diagonale
@@ -126,6 +119,9 @@ def hessian(f,x,eps=1.e-4):
     return hess
 
 def subgains(T):
+    """
+    Returns gains as lists of arrays from t = 0 to t = T-1 
+    """
     # a t = T (T du sous probleme)
     Vxx = Qxx()
     Vzx = np.zeros((n,n))
@@ -168,18 +164,7 @@ def subgains(T):
         Kxl.append(Kx)
         Kzl.append(Kz)
         k1l.append(k1)
-        if (False):
-            print("t={}".format(t))
-            print("Nu={}".format(Nu))
-            print("Py={}".format(Py))
-            print("Zw={}".format(Zw))
-            print("A={}".format(A))
-            print("B={}".format(B))
-            if (Py.shape==((m,m))):
-                print("Py==Im ? : {}".format((Py==np.eye(m)).all()))
-            print("A*Nu == Im ? : {}".format((A@Nu==np.eye(m)).all()))
-            print("A*Nu is close to Im ? : {}".format(np.allclose(A@Nu,np.eye(m))))
-            print("Hxt+1 :{}".format(Hx))    
+        
         #maj cout
         Vxx = Mxx+Mux.T@Kx+Kx.T@Mux+Kx.T@Muu@Kx
         Vzx = Mzx+Mzu@Kx+Kz.T@Mux+Kz.T@Muu@Kx
@@ -189,26 +174,16 @@ def subgains(T):
         Hx = (np.eye(n)-Nu@A)@Nx
         Hz = (np.eye(n)-Nu@A)@Nz
         h1 = (np.eye(n)-Nu@A)@n1
-        if(False): 
-            print("t = {}".format(t))
-            print("Hx = {}".format(Hx))
-            print("Hz = {}".format(Hz))
-            print("h1 = {}".format(h1))
+        
     Kxl.reverse()
     Kzl.reverse()
     k1l.reverse()
     return Kxl,Kzl,k1l
 
-def subroll(x0,xterm,Ra,Rz,r1,Sa,Sz,s1,T):
-    x = np.zeros((n,T+1))
-    u = np.zeros((m,T))
-    for t in range(T):
-        x[:,t:t+1] = Ra[t]@x0+Rz[t]@xterm+r1[t]
-        u[:,t:t+1] = Sa[t]@x0+Sz[t]@xterm+s1[t]
-    x[:,T:T+1] = Ra[T]@x0+Rz[T]@xterm+r1[T]
-    return x,u
-
 def RS(Kx,Kz,k1,T):
+    """
+    Returns R and S matrices for the forward pass as lists of arrays
+    """
     Ra = [np.eye(n)]
     Rz = [np.zeros((n,n))]
     r1 = [np.zeros((n,1))]
@@ -225,6 +200,9 @@ def RS(Kx,Kz,k1,T):
     return Ra,Rz,r1,Sa,Sz,s1
 
 def AAT(T):
+    """
+    Returns the A@(A.T) matrix given in equation 34
+    """
     mat = np.eye((T+2)*n)
     for t in range(T):
         mat[n*t:n*(t+1),n*(t+1):n*(t+2)]=-Fx.T
@@ -235,6 +213,10 @@ def AAT(T):
     return mat
 
 def Ab(Ra,Rz,r1,Sa,Sz,s1,T):
+    """
+    Returns the colums in equation 36 : Da,Dz and d1 (note : on the paper,
+    n rows are missing (ie (T+2)*n rows instead of (T+1)*n)
+    """
     Da = np.zeros(((T+2)*n,n))
     Dz = np.zeros(((T+2)*n,n))
     d1 = np.zeros(((T+2)*n,1))
@@ -254,67 +236,85 @@ def Ab(Ra,Rz,r1,Sa,Sz,s1,T):
     Dz[n*(T+1):,:] = -Qxx()@Rz[T]
     d1[n*(T+1):,:] = -Qxx()@r1[T]-qx()
     return Da,Dz,d1
-
-def scatter_x(x,cercle=False):
-    plt.figure()
-    figure, axes = plt.subplots()
-    if (dimspace==2):
-        if(cercle):
-            draw_circle = plt.Circle((xsphere[0:1,:], xsphere[1:2,:]), Rsphere,fill=False)
-            draw_circle2 = plt.Circle((xsphere[0:1,:], xsphere[1:2,:]), Rsphere+distsecu,fill=False)
-            axes.add_artist(draw_circle)
-            axes.add_artist(draw_circle2)
-        plt.xlabel("x1")
-        plt.ylabel("x2")
-        plt.scatter(x[0:1,:],x[1:2,:],s=3)
-        plt.title("Trajectoire")
-        plt.savefig("trajectoire.png")
-    if(dimspace==1):
-        plt.scatter(x[0:1,:],np.zeros((1,x[0:1,:].shape[1])))
-        plt.title("Trajectoire")
         
-def lines(x,u):
-    t = np.linspace(0,T*dt,T+1)
+def lines(x,u,T):
+    t = np.linspace(0,T[-1]*dt,T[-1]+1)
     fig,(ax1,ax2,ax3)=plt.subplots(3,1,sharex=True)
     for k in range(dimspace):
         ax1.plot(t,x[k,:],label="x"+str(k+1))
         ax2.plot(t,x[dimspace+k,:],label="v"+str(k+1))
         ax3.plot(t[:-1],u[k,:],label="u"+str(k+1))
+    for k in range(len(T)):
+        ax1.axvline(T[k]*dt,color="g",linestyle="--")
+        ax2.axvline(T[k]*dt,color="g",linestyle="--")
     ax1.legend()
     ax2.legend()
     ax3.legend()
     fig.suptitle("Courbes")
     plt.savefig("courbes.png",dpi=1000)
-
-def calcul_cout_et_affichage(x,u):
-    scatter_x(x,False)
-    lines(x,u)
     
-def test_lqr(T):
-    Kx,Kz,k1 = subgains(T)
-    Ra,Rz,r1,Sa,Sz,s1 = RS(Kx,Kz,k1,T)
-    x,u = subroll(x0,xterm,Ra,Rz,r1,Sa,Sz,s1,T)
-    calcul_cout_et_affichage(x,u)
-    
-def calculparallele(t0,T):
+def calculparalleleback(t0,T):
+    """
+    Returns the coefficients used to create the system explained after equation 7,
+    for one constrained subproblem
+    """
     Kxl,Kzl,k1l = subgains(T) #utiliser t0 quand la dynamique varie
-    Sa,Sz,s1,Ra,Rz,r1 = RS(Kxl,Kzl,k1l,T)
+    Ra,Rz,r1,Sa,Sz,s1 = RS(Kxl,Kzl,k1l,T)
     aat = AAT(T) #utiliser t0 quand la dynamique varie
-    Da,Dz,d1 = Ab(Sa,Sz,s1,Ra,Rz,r1,T) #utiliser t0 quand la dynamique varie
-    return aat,Da,Dz,d1
+    Da,Dz,d1 = Ab(Ra,Rz,r1,Sa,Sz,s1,T) #utiliser t0 quand la dynamique varie
+    return aat,Da,Dz,d1,Ra,Rz,r1,Sa,Sz,s1
+
+def calculparalleleforw(t1,t2,xinit,xterm,Ra,Rz,r1,Sa,Sz,s1):
+    """
+    Computes the trajectory of one subproblem
+    """
+    x = np.zeros((n,t2-t1+1))
+    u = np.zeros((m,t2-t1))
+    for t in range(t2-t1):
+        x[:,t:t+1]=Ra[t]@xinit+Rz[t]@xterm+r1[t]
+        u[:,t:t+1]=Sa[t]@xinit+Sz[t]@xterm+s1[t]
+    x[:,-1:]=Ra[-1]@xinit+Rz[-1]@xterm+r1[-1]
+    return x,u
 
 def constrainedLQR(x0,xterm,T):
+    """
+    Main function, computes the gains for each sub-problem (possibly in parallel),
+    solves the link points, computes the trajectory (possibly in parallel) and displays
+    """
     aat,Da,Dz,d1 = [],[],[],[]
+    Ra,Rz,r1,Sa,Sz,s1 = [],[],[],[],[],[]
     for k in range(len(T)-1):
-        aat2,Da2,Dz2,d12 = calculparallele(0,T[k+1]-T[k])
+        aat2,Da2,Dz2,d12,Ra2,Rz2,r12,Sa2,Sz2,s12 = calculparalleleback(0,T[k+1]-T[k])
         aat.append(aat2)
         Da.append(Da2)
         Dz.append(Dz2)
         d1.append(d12)
-    xlink = solveur(aat,Da,Dz,d1,x0,xterm,T)
-    return xlink
-
+        Ra.append(Ra2)
+        Rz.append(Rz2)
+        r1.append(r12)
+        Sa.append(Sa2)
+        Sz.append(Sz2)
+        s1.append(s12)
+    xlink = solveur(aat,Da,Dz,d1,x0,xterm,T) #solves for the link points, but has to be reshaped first
+    xlink = np.reshape(xlink,(len(T)-2,n))
+    xlink = list(xlink)
+    xlink = [np.reshape(np.array([xlink[k]]),(n,1)) for k in range (len(xlink))] #done with reshaping
+    for k in range(len(xlink)):
+        print("xlink({}) = \n{}".format(T[k+1]*dt,xlink[k]))
+    xlink.insert(0,x0)
+    xlink.append(xterm)
+    x = np.zeros((n,T[-1]+1))
+    u = np.zeros((m,T[-1]))
+    for k in range(len(T)-1):
+        x[:,T[k]:T[k+1]+1],u[:,T[k]:T[k+1]] = calculparalleleforw(T[k],T[k+1],xlink[k],xlink[k+1],Ra[k],Rz[k],r1[k],Sa[k],Sz[k],s1[k]) 
+    lines(x,u,T)
+    
 def solveur(aat,Da,Dz,d1,x0,xterm,T):
+    """
+    Creates the system to find the link points and solves it
+    input : aat,Da,Dz,d1 : list of arrays, one element per subproblem
+    T : list of node numbers
+    """
     A = np.eye((len(T)-2)*n)
     b = np.zeros(((len(T)-2)*n,1))
     for k in range(len(T)-1):
@@ -329,5 +329,5 @@ def solveur(aat,Da,Dz,d1,x0,xterm,T):
     b[-n:,:]=b[-n:,:]+np.linalg.inv(aat[-1])[:n,:]@Dz[-1]@xterm
     return np.linalg.solve(A,-b)
 
-print(constrainedLQR(x0,xterm,[0,20,50,60,80,98,100]))
-test_lqr(T)
+constrainedLQR(x0,xterm,[0,50,100])
+
