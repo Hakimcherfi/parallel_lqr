@@ -3,13 +3,12 @@ from matplotlib import pyplot as plt
 from numpy import linalg
 
 dt = 0.01
+x0 = np.array([[1.],[1.],[0.],[0.]]) #contrainte
+xtarg = np.array([[0.],[0.],[0.],[0.]]) #fonction cout
 
-x0 = np.array([[0.],[0.],[0.],[0.]]) #contrainte
-xtarg = np.array([[1.],[2.],[0.],[0.]]) #fonction cout
-xterm = np.array([[1.],[2.],[0.],[0.]]) #supposition
-
-xweight = 1.
-uweight = 1.
+xweight = np.array([1.,1.,1.,1.])
+uweight = np.array([1.,1.])
+xweightT = np.array([1000.,1000.,1.,1.])
 
 nq = 2
 nv = 2
@@ -47,11 +46,11 @@ def orth(A,eps=1e-10):
     return np.compress(notnull_mask,u,axis=1)
 
 def costx(x):
-    Cx = xweight*np.eye(n)
+    Cx = np.diag(xweight)
     return 0.5*(x-xtarg).T@Cx@(x-xtarg)
 
 def costu(u):
-    Cu = uweight*np.eye(m)
+    Cu = np.diag(uweight)
     return 0.5*u.T@Cu@u
 
 def cost(x,u):
@@ -71,6 +70,12 @@ def qx():
 
 def qu():
     return np.zeros((m,1))
+
+def qxT():
+    return np.zeros((n,1))
+
+def QxxT():
+    return np.diag(xweightT)
 
 def jacobian(f,x,eps=1.e-4):
     """
@@ -276,7 +281,7 @@ def calculparalleleforw(t1,t2,xinit,xterm,Ra,Rz,r1,Sa,Sz,s1):
     x[:,-1:]=Ra[-1]@xinit+Rz[-1]@xterm+r1[-1]
     return x,u
 
-def constrainedLQR(x0,xterm,T):
+def constrainedLQR(x0,T):
     """
     Main function, computes the gains for each sub-problem (possibly in parallel),
     solves the link points, computes the trajectory (possibly in parallel) and displays
@@ -284,6 +289,9 @@ def constrainedLQR(x0,xterm,T):
     aat,Da,Dz,d1 = [],[],[],[]
     Ra,Rz,r1,Sa,Sz,s1 = [],[],[],[],[],[]
     for k in range(len(T)-1):
+        """
+        Du premier au dernier sous probleme (0 a T)
+        """
         aat2,Da2,Dz2,d12,Ra2,Rz2,r12,Sa2,Sz2,s12 = calculparalleleback(0,T[k+1]-T[k])
         aat.append(aat2)
         Da.append(Da2)
@@ -295,39 +303,83 @@ def constrainedLQR(x0,xterm,T):
         Sa.append(Sa2)
         Sz.append(Sz2)
         s1.append(s12)
-    xlink = solveur(aat,Da,Dz,d1,x0,xterm,T) #solves for the link points, but has to be reshaped first
-    xlink = np.reshape(xlink,(len(T)-2,n))
+    xlink = solveur(aat,Da,Dz,d1,x0,T) #solves for the link points, but has to be reshaped first
+    xlink = np.reshape(xlink,(len(T)-1,n))
     xlink = list(xlink)
     xlink = [np.reshape(np.array([xlink[k]]),(n,1)) for k in range (len(xlink))] #done with reshaping
     for k in range(len(xlink)):
         print("xlink({}) = \n{}".format(T[k+1]*dt,xlink[k]))
     xlink.insert(0,x0)
-    xlink.append(xterm)
     x = np.zeros((n,T[-1]+1))
     u = np.zeros((m,T[-1]))
     for k in range(len(T)-1):
         x[:,T[k]:T[k+1]+1],u[:,T[k]:T[k+1]] = calculparalleleforw(T[k],T[k+1],xlink[k],xlink[k+1],Ra[k],Rz[k],r1[k],Sa[k],Sz[k],s1[k]) 
     lines(x,u,T)
     
-def solveur(aat,Da,Dz,d1,x0,xterm,T):
+def LaLzl1(aat,Da,Dz,d1):
+    """
+    Rewrites the lagrange multipliers systems
+    Returns La,Lz,l1
+    """
+    aat1 = np.linalg.inv(aat)
+    return aat1@Da,aat1@Dz,aat1@d1
+
+def LandE(aat,Da,Dz,d1):
+    """
+    Returns the terms used to calculate the link points :
+    La0,Lz0,l10,LaT,LzT,l1T,Ea,Ez,e1
+    """
+    La,Lz,l1 = LaLzl1(aat,Da,Dz,d1)
+    return La[:n,:],Lz[:n,:],l1[:n,:],La[-2*n:-n,:],Lz[-2*n:-n,:],l1[-2*n:-n,:],La[-n:,:],Lz[-n:,:],l1[-n:,:]
+    
+def solveur(aat,Da,Dz,d1,x0,T):
     """
     Creates the system to find the link points and solves it
     input : aat,Da,Dz,d1 : list of arrays, one element per subproblem
     T : list of node numbers
     """
-    A = np.eye((len(T)-2)*n)
-    b = np.zeros(((len(T)-2)*n,1))
+    A = np.eye(n*(len(T)-1))
+    B = np.zeros((n*(len(T)-1),1))
+    
+    La0 = []
+    Lz0 = []
+    l10 = []
+    LaT = []
+    LzT = []
+    l1T = []
+    Ea = []
+    Ez = []
+    e1 = []
+    
     for k in range(len(T)-1):
-        assert(T[k+1]-T[k]>=n)
-    for k in range(len(T)-2):
-        A[k*n:(k+1)*n,k*n:(k+1)*n] = np.linalg.inv(aat[k])[-n:,:]@Dz[k]+np.linalg.inv(aat[k+1])[:n,:]@Da[k+1]
-        b[k*n:(k+1)*n,:] = np.linalg.inv(aat[k])[-n:,:]@d1[k]+np.linalg.inv(aat[k+1])[:n,:]@d1[k+1]
-    for k in range(len(T)-3):
-        A[k*n:(k+1)*n,(k+1)*n:(k+2)*n] = np.linalg.inv(aat[k+1])[:n,:]@Dz[k+1]
-        A[(k+1)*n:(k+2)*n,k*n:(k+1)*n] = np.linalg.inv(aat[k+1])[-n:,:]@Da[k+1]
-    b[:n,:]=b[:n,:]+np.linalg.inv(aat[0])[-n:,:]@Da[0]@x0
-    b[-n:,:]=b[-n:,:]+np.linalg.inv(aat[-1])[:n,:]@Dz[-1]@xterm
-    return np.linalg.solve(A,-b)
+        La01,Lz01,l101,LaT1,LzT1,l1T1,Ea1,Ez1,e11=LandE(aat[k],Da[k],Dz[k],d1[k])
+        La0.append(La01)
+        Lz0.append(Lz01)
+        l10.append(l101)
+        LaT.append(LaT1)
+        LzT.append(LzT1)
+        l1T.append(l1T1)
+        Ea.append(Ea1)
+        Ez.append(Ez1)
+        e1.append(e11)
+        
+    for k in range(len(T)-2): 
+        #termes sur diagonale de A sauf le dernier :
+        A[k*n:(k+1)*n,k*n:(k+1)*n] = Ez[k]+La0[k+1]#ok
+        #termes a droite de diagonale de A :
+        A[k*n:(k+1)*n,(k+1)*n:(k+2)*n] = Lz0[k+1]#ok
+        #termes e sur B :
+        B[k*n:(k+1)*n,:] += e1[k]#ok
+        #termes l sur B
+        B[k*n:(k+1)*n,:] += l10[k+1]#ok
+    for k in range (len(T)-3):
+        #termes a gauche de diagonale
+        A[(k+1)*n:(k+2)*n,k*n:(k+1)*n] = Ea[k+1]#ok
+    A[-n:,-2*n:-n] = LaT[-1]#ok
+    A[-n:,-n:] = LzT[-1]+QxxT() #ok
+    B[:n,:] += Ea[0]@x0 #ok
+    B[-n:,:] = l1T[-1]+qxT() #ok
+    xlink = np.linalg.solve(A,-B)
+    return xlink
 
-constrainedLQR(x0,xterm,[0,50,100])
-
+constrainedLQR(x0,[0,25,50,75,100])
