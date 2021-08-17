@@ -5,20 +5,24 @@ from matplotlib import pyplot as plt
 
 #variables to define the problem
 T = [0,25,50,75,100] #list of nodes (here, 4 subproblems of 25 nodes each
-dt = 0.01
-n = 2 #state dimension
-m = 1 #control dimension
-xweight = np.array([1.,1.]) #weights used by the cost function
-uweight = np.array([1.]) #weights used by the cost function
-xweightT = np.array([1.,1.]) #weights used by the final cost function
-x0 = np.array([[1.],[0.]]) #initial state
-xtarg = np.array([[0.],[0.]]) #target, used by the cost function
+dt = 0.1
+n = 4 #state dimension
+m = 2 #control dimension
+xweight = np.array([1.,1.,1.,1.]) #weights used by the cost function
+uweight = np.array([100.,100.]) #weights used by the cost function
+xweightT = np.array([1.,1.,1.,1.]) #weights used by the final cost function
+x0 = np.array([[-2.],[-3.],[0.],[0.]]) #initial state
+xtarg = np.array([[0.],[0.],[0.],[0.]]) #target, used by the cost function
 x = np.tile(x0,(1,T[-1]+1)) #initial guess state trajectory
 u = np.zeros((m,T[-1])) #initial guess control trajectory
+xsphere = np.array([[-1.],[-1.]])
+Rsphere = .25
+distsecu = .25
+obstacleweight=1000.
 
 #linear algebra functions
 
-def jacobian(f,x,eps=1.e-4):
+def jacobian(f,x,eps=1.e-8):
     """
     Returns the jacobian matrix of a function f at a given point x
     usage :
@@ -426,6 +430,17 @@ def next_state_warp(x):
     #print("B = {}".format(B))
     return A@x[:n,:] + B@x[n:,:]
 
+def costobstacle(x):
+    distance = np.linalg.norm(x-xsphere)
+    if (distance > Rsphere + distsecu):
+        return 0.
+    else:
+        if (distance <= Rsphere):
+            d = 0
+        else :
+            d = distance - Rsphere
+        return (d-distsecu)**2
+
 def cost_warp(x):
     """
     Unicycle cost function
@@ -434,7 +449,10 @@ def cost_warp(x):
     #Cx = xweight*np.eye(n)
     #Cx[2:,2:]=0.
     #Cu = uweight*np.eye(m)
-    return 0.5*(x[:n,:]-xtarg).T@np.diag(xweight)@(x[:n,:]-xtarg) + 0.5*x[n:,:].T@np.diag(uweight)@x[n:,:]
+    #print(obstacleweight)
+    #print(x[:2,:])
+    #print(costobstacle(x[:2,:]))
+    return 0.5*(x[:n,:]-xtarg).T@np.diag(xweight)@(x[:n,:]-xtarg) + 0.5*x[n:,:].T@np.diag(uweight)@x[n:,:]+obstacleweight*costobstacle(x[:2,:])
 
 def costxT(x):
     return 0.5*(x-xtarg).T@np.diag(xweightT)@(x-xtarg)
@@ -506,6 +524,60 @@ def lines(x,u,T):
     ax3.set_xlabel("Time (seconds)")
     plt.savefig("courbes.png",dpi=1000)
 
-x,u = constrainedLQR(x,u,T)
-x,u = constrainedLQR(x,u,T)
+def calcul_cout(x,u,T):
+    sumcosts = 0.
+    for t in range(T):
+        sumcosts+=cost(x[:,t:t+1],u[:,t:t+1])
+    sumcosts+=costxT(x[:,T:T+1])
+    return sumcosts
+
+def ddp(x,u,T):
+    i = 0
+    print("Cout initial : {}".format(calcul_cout(x,u,T[-1])))
+    while True:
+        x1,u1 = np.array(x),np.array(u)
+        cout1 = calcul_cout(x1,u1,T[-1])
+        x,u = constrainedLQR(x,u,T)
+        dx,du = x-x1,u-u1
+        alpha = 1.
+        while(calcul_cout(x1,u1,T[-1])<calcul_cout(x1+alpha*dx,u1+alpha*du,T[-1])):
+            alpha=alpha/2
+            if (alpha < 1/2048.):
+                alpha = 0.
+                break
+        if (alpha == 0.):
+            break
+        print("Iteration {}, alpha = {}".format(i+1,alpha))
+        x=x1+alpha*dx
+        u=u1+alpha*du
+        cout2 = calcul_cout(x,u,T[-1])
+        if np.isclose(cout2,cout1):
+            break
+        i+=1
+        print(cout2)
+    print("{} itérations pour converger".format(i))
+    return x,u
+
+dimspace=2
+
+def scatter_x(x,cercle=False):
+    plt.figure()
+    figure, axes = plt.subplots()
+    if (dimspace==2):
+        if(cercle):
+            draw_circle = plt.Circle((xsphere[0:1,:], xsphere[1:2,:]), Rsphere,fill=False)
+            draw_circle2 = plt.Circle((xsphere[0:1,:], xsphere[1:2,:]), Rsphere+distsecu,fill=False)
+            axes.add_artist(draw_circle)
+            axes.add_artist(draw_circle2)
+        plt.xlabel("x1")
+        plt.ylabel("x2")
+        plt.scatter(x[0:1,:],x[1:2,:],s=3)
+        plt.title("Trajectory")
+        plt.savefig("trajectoire.png",dpi=1000)
+    if(dimspace==1):
+        plt.scatter(x[0:1,:],np.zeros((1,x[0:1,:].shape[1])))
+        plt.title("Trajectory")
+
+x,u =ddp(x,u,T)
 lines(x,u,T)
+scatter_x(x,cercle=True)
