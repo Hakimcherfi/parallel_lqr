@@ -3,17 +3,18 @@
 import numpy as np
 from matplotlib import pyplot as plt
 
-T = [0,25,50,75,100]
+#variables to define the problem
+T = [0,25,50,75,100] #list of nodes (here, 4 subproblems of 25 nodes each
 dt = 0.01
-n = 2
-m = 1
-xweight = np.array([1.,1.])
-uweight = np.array([1.])
-xweightT = np.array([1.,1.])
-x0 = np.array([[1.],[0.]])
-xtarg = np.array([[0.],[0.]])
-x = np.tile(x0,(1,T[-1]+1))
-u = np.zeros((m,T[-1]))
+n = 2 #state dimension
+m = 1 #control dimension
+xweight = np.array([1.,1.]) #weights used by the cost function
+uweight = np.array([1.]) #weights used by the cost function
+xweightT = np.array([1.,1.]) #weights used by the final cost function
+x0 = np.array([[1.],[0.]]) #initial state
+xtarg = np.array([[0.],[0.]]) #target, used by the cost function
+x = np.tile(x0,(1,T[-1]+1)) #initial guess state trajectory
+u = np.zeros((m,T[-1])) #initial guess control trajectory
 
 #linear algebra functions
 
@@ -99,7 +100,12 @@ def calculparalleleback(x,u,t0,t1):
 
 def subgains(x,u,t0,t1):
 
-    # a t = T (T du sous probleme)
+    """computes the backward pass of a subproblem
+    input : initial guesses x and u, first node number and last node number
+    output : 3 lists of gains, list going from t0 to t1
+    """
+
+    # at t = T (ie t1)
     Vxx = Qxx(x[:,-1:],u[:,-1:])
     Vzx = np.zeros((n,n))
     Vzz = np.zeros((n,n))
@@ -118,22 +124,25 @@ def subgains(x,u,t0,t1):
     for t in range(t1-t0-1,-1,-1):
         Fxt = Fx(x[:,t:t+1],u[:,t:t+1])
         Fut = Fu(x[:,t:t+1],u[:,t:t+1])   
+        f1t = f1(x[:,t+1:t+2],x[:,t:t+1],u[:,t:t+1])
         Qxxt = Qxx(x[:,t:t+1],u[:,t:t+1])
         Quxt = Qux(x[:,t:t+1],u[:,t:t+1])
+        qxt = qx(x[:,t:t+1],u[:,t:t+1])
+        qut = qu(x[:,t:t+1],u[:,t:t+1])
         Mxx = Qxxt+Fxt.T@Vxx@Fxt
-        Mux = Fut.T@Vxx@Fxt + Qux(x[:,t:t+1],u[:,t:t+1])
-        Mzu = Vzx@Fu(x[:,t:t+1],u[:,t:t+1])
-        Mzx = Vzx@Fx(x[:,t:t+1],u[:,t:t+1])
+        Mux = Fut.T@Vxx@Fxt + Quxt
+        Mzu = Vzx@Fut
+        Mzx = Vzx@Fxt
         Mzz = Vzz
-        Muu = Quu(x[:,t:t+1],u[:,t:t+1]) + Fu(x[:,t:t+1],u[:,t:t+1]).T@Vxx@Fu(x[:,t:t+1],u[:,t:t+1])
-        Mfu = Vxx@Fu(x[:,t:t+1],u[:,t:t+1])
-        mx1 = Fx(x[:,t:t+1],u[:,t:t+1]).T@vx1 + qx(x[:,t:t+1],u[:,t:t+1])
-        mu1 = Fu(x[:,t:t+1],u[:,t:t+1]).T@vx1 + qu(x[:,t:t+1],u[:,t:t+1])
+        Muu = Quu(x[:,t:t+1],u[:,t:t+1]) + Fut.T@Vxx@Fut
+        Mfu = Vxx@Fut
+        mx1 = Fxt.T@vx1 + qxt
+        mu1 = Fut.T@vx1 + qut
         mz1 = vz1
-        Nx = Hx@Fx(x[:,t:t+1],u[:,t:t+1])
-        Nu = Hx@Fu(x[:,t:t+1],u[:,t:t+1])
+        Nx = Hx@Fxt
+        Nu = Hx@Fut
         Nz = Hz
-        n1 = h1 + Hx@f1(x[:,t:t+1],u[:,t:t+1])
+        n1 = h1 + Hx@f1t
         Zw = null_space(Nu)
         Py = orth(Nu.T)
         A = Py@np.linalg.pinv(Nu@Py)
@@ -142,7 +151,7 @@ def subgains(x,u,t0,t1):
         #calcul gains
         Kx = -A@Nx -B@Mux
         Kz = -A@Nz -B@(Mzu.T)
-        k1 = -A@n1 -B@(mu1+Mfu.T@f1(x[:,t:t+1],u[:,t:t+1]))
+        k1 = -A@n1 -B@(mu1+Mfu.T@f1t)
         Kxl.append(Kx)
         Kzl.append(Kz)
         k1l.append(k1)
@@ -178,12 +187,12 @@ def RS(x,u,Kx,Kz,k1,t0,t1):
         s1.append(Kx[t]@r1[t]+k1[t])
         Ra.append(Fx(x[:,t:t+1],u[:,t:t+1])@Ra[t]+Fu(x[:,t:t+1],u[:,t:t+1])@Sa[t])
         Rz.append(Fx(x[:,t:t+1],u[:,t:t+1])@Rz[t]+Fu(x[:,t:t+1],u[:,t:t+1])@Sz[t])
-        r1.append(Fx(x[:,t:t+1],u[:,t:t+1])@r1[t]+Fu(x[:,t:t+1],u[:,t:t+1])@s1[t]+f1(x[:,t:t+1],u[:,t:t+1]))
+        r1.append(Fx(x[:,t:t+1],u[:,t:t+1])@r1[t]+Fu(x[:,t:t+1],u[:,t:t+1])@s1[t]+f1(x[:,t+1:t+2],x[:,t:t+1],u[:,t:t+1]))
     return Ra,Rz,r1,Sa,Sz,s1
 
 def AAT(x,u,t0,t1):
     """
-    Returns the A@(A.T) matrix given in equation 34
+    Returns the A@(A.T) matrix given in equation 34 for a constrained LQR
     """
     T = t1-t0
     mat = np.eye((T+2)*n)
@@ -263,9 +272,9 @@ def Fu(x,u):
     """
     return jacobian(next_state_warp,np.concatenate([x,u]))[:,n:]
 
-def f1(x,u):
-    return np.zeros((n,1))
-    #return next_state(x,u)-Fx(x,u)@x-Fu(x,u)@u
+def f1(x1,x,u):
+    #return np.zeros((n,1))
+    return x1-next_state(x,u)
 
 def next_state(x,u):
     return next_state_warp(np.concatenate([x,u]))
@@ -277,16 +286,16 @@ def QxxT(x = np.zeros((n,1))):
     return hessian(costxT,x)
 
 def qxT(x=np.zeros((n,1))):
-    return np.zeros((n,1))
+    #return np.zeros((n,1))
     return jacobian(costxT,x).T - QxxT(x)@x
 
 def qx(x,u=np.zeros((m,1))):
-    return np.zeros((n,1))
+    #return np.zeros((n,1))
     a = Qxx(x,u)@x+Qux(x,u).T@u
     return jacobian(cost_warp,np.concatenate([x,u]))[:,:n].T - a
 
 def qu(x,u=np.zeros((m,1))):
-    return np.zeros((m,1))
+    #return np.zeros((m,1))
     a = Qux(x,u)@x+Quu(x,u)@u
     return jacobian(cost_warp,np.concatenate([x,u]))[:,n:].T - a
 
@@ -302,8 +311,6 @@ def Qux(x,u):
     #return np.zeros((m,n))
     return hessian(cost_warp,np.concatenate([x,u]))[n:,:n]
 
-def costxT(x):
-    return 0.5*(x-xtarg).T@np.diag(xweightT)@(x-xtarg)
 
 #Functions to apply the forward pass
 
@@ -428,6 +435,9 @@ def cost_warp(x):
     #Cx[2:,2:]=0.
     #Cu = uweight*np.eye(m)
     return 0.5*(x[:n,:]-xtarg).T@np.diag(xweight)@(x[:n,:]-xtarg) + 0.5*x[n:,:].T@np.diag(uweight)@x[n:,:]
+
+def costxT(x):
+    return 0.5*(x-xtarg).T@np.diag(xweightT)@(x-xtarg)
 
 def constrainedLQR(x,u,T):
     """
